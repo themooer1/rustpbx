@@ -16,6 +16,7 @@ use chrono::{DateTime, Local, TimeZone};
 use clap::Parser;
 use rustpbx::config::{SipFlowConfig, SipFlowEngine, SipFlowSubdirs};
 use rustpbx::sipflow::{SipFlowItem, SipFlowMsgType};
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -183,7 +184,7 @@ async fn run_bench(engine: SipFlowEngine, args: &Args) -> BenchResult {
         for sip_idx in 0..args.sip_per_call {
             let ts = base_ts + (call_idx as u64 * 1_000_000) + (sip_idx as u64 * 100_000);
             backend
-                .record(&call_id, make_sip_item(ts, &call_id))
+                .record(Cow::Borrowed(&call_id), make_sip_item(ts, &call_id))
                 .unwrap();
         }
         for rtp_idx in 0..args.rtp_per_call {
@@ -193,7 +194,10 @@ async fn run_bench(engine: SipFlowEngine, args: &Args) -> BenchResult {
                 + (args.sip_per_call as u64 * 100_000)
                 + (rtp_idx as u64 * 20_000);
             backend
-                .record(&call_id, make_rtp_item(ts, leg, rtp_idx as u16))
+                .record(
+                    Cow::Borrowed(&call_id),
+                    make_rtp_item(ts, leg, rtp_idx as u16),
+                )
                 .unwrap();
         }
     }
