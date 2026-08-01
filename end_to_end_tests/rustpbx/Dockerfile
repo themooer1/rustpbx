@@ -18,7 +18,7 @@ COPY . .
 # matrix builds reuse the compiled dependency graph.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/workspace/target \
+    --mount=type=cache,target=/workspace/target,sharing=locked \
     CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 \
     cargo build --no-default-features --bin rustpbx \
     && mkdir -p /out \

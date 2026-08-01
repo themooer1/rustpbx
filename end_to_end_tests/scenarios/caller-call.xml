@@ -5,10 +5,10 @@
   takes both c= address and m=audio port from the received SDP; no destination
   address or port is embedded in this scenario or in the PCAP fixture.
 -->
-<scenario name="rustpbx e2e caller with negotiated RTP and RFC2833">
+<scenario name="PBX e2e caller with negotiated RTP and RFC4733">
   <send retrans="500"><![CDATA[
 INVITE sip:[e2e_target]@[remote_host]:[remote_port];transport=[transport] SIP/2.0
-Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]-[local_port]
 From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
 To: <sip:[e2e_target]@[remote_host]:[remote_port]>
 Call-ID: [call_id]
@@ -20,7 +20,7 @@ Content-Length: [len]
 
 v=0
 o=[e2e_user] 1 1 IN IP[media_ip_type] [media_ip]
-s=rustpbx-e2e
+s=pbx-e2e
 c=IN IP[media_ip_type] [media_ip]
 t=0 0
 m=audio [media_port] RTP/AVP 8 101
@@ -28,12 +28,17 @@ a=rtpmap:8 PCMA/8000
 a=rtpmap:101 telephone-event/8000
 a=fmtp:101 0-16
 ]]></send>
+  <!-- A UAS challenges with 401; a proxy challenges with 407 (RFC 3261).
+       Accept either role while letting SIPp generate the matching
+       Authorization or Proxy-Authorization header. -->
+  <recv response="401" auth="true" optional="true" next="1"/>
   <recv response="407" auth="true" crlf="true"/>
+  <label id="1"/>
   <send><![CDATA[
 ACK sip:[e2e_target]@[remote_host]:[remote_port];transport=[transport] SIP/2.0
-Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]-[local_port]
 From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
-To: [last_To:]
+[last_To:]
 Call-ID: [call_id]
 CSeq: 1 ACK
 Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
@@ -43,7 +48,7 @@ Content-Length: 0
 ]]></send>
   <send retrans="500"><![CDATA[
 INVITE sip:[e2e_target]@[remote_host]:[remote_port];transport=[transport] SIP/2.0
-Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]-[local_port]
 From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
 To: <sip:[e2e_target]@[remote_host]:[remote_port]>
 Call-ID: [call_id]
@@ -56,7 +61,7 @@ Content-Length: [len]
 
 v=0
 o=[e2e_user] 1 1 IN IP[media_ip_type] [media_ip]
-s=rustpbx-e2e
+s=pbx-e2e
 c=IN IP[media_ip_type] [media_ip]
 t=0 0
 m=audio [media_port] RTP/AVP 8 101
@@ -66,12 +71,19 @@ a=fmtp:101 0-16
 ]]></send>
   <recv response="100" optional="true"/>
   <recv response="180" optional="true"/>
-  <recv response="200" rrs="true" crlf="true"/>
+  <recv response="200" rrs="true" crlf="true">
+    <action>
+      <!-- Preserve the remote dialog tag before an optional re-INVITE makes
+           the most recently received To header point back at this endpoint. -->
+      <ereg regexp="tag=[^;[:space:]&gt;]+" search_in="hdr" header="To:"
+            check_it="true" assign_to="dialog_peer_tag"/>
+    </action>
+  </recv>
   <send><![CDATA[
 ACK [next_url] SIP/2.0
-Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]-[local_port]
 From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
-To: [last_To:]
+To: <sip:[e2e_target]@[remote_host]>;[$dialog_peer_tag]
 [routes]
 Call-ID: [call_id]
 CSeq: 2 ACK
@@ -87,9 +99,9 @@ Content-Length: 0
   <pause milliseconds="500"/>
   <send retrans="500"><![CDATA[
 BYE [next_url] SIP/2.0
-Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]-[local_port]
 From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
-To: [last_To:]
+To: <sip:[e2e_target]@[remote_host]>;[$dialog_peer_tag]
 [routes]
 Call-ID: [call_id]
 CSeq: 3 BYE
@@ -99,6 +111,39 @@ Content-Length: 0
 
 ]]></send>
   <recv response="200" crlf="true"/>
+  <nop next="19"/>
+
+  <!-- A direct-media B2BUA may re-INVITE either endpoint at any point after
+       the dialog is established. SIPp's unexpected-message subroutine lets
+       the same scenario accept that standards-compliant renegotiation without
+       making it mandatory for a proxy that leaves the original SDP alone. -->
+  <label id="_unexp.main"/>
+  <recv request="INVITE" crlf="true"/>
+  <send retrans="500"><![CDATA[
+SIP/2.0 200 OK
+[last_Via:]
+[last_From:]
+[last_To:]
+[last_Call-ID:]
+[last_CSeq:]
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Content-Type: application/sdp
+Content-Length: [len]
+
+v=0
+o=[e2e_user] 1 2 IN IP[media_ip_type] [media_ip]
+s=pbx-e2e
+c=IN IP[media_ip_type] [media_ip]
+t=0 0
+m=audio [media_port] RTP/AVP 8 101
+a=rtpmap:8 PCMA/8000
+a=rtpmap:101 telephone-event/8000
+a=fmtp:101 0-16
+]]></send>
+  <recv request="ACK" crlf="true"/>
+  <nop><action><exec play_pcap_audio="/opt/sipp/pcap/g711a.pcap"/></action></nop>
+  <nop><action><jump variable="_unexp.retaddr"/></action></nop>
+  <label id="19"/>
   <!-- Deliberately short: a successful BYE must not wait for RTP inactivity. -->
   <timewait milliseconds="200"/>
 </scenario>

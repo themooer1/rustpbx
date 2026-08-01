@@ -31,8 +31,9 @@ esac
 }
 
 usage() {
-    echo "usage: $0 {udp|tcp|tls} {direct|proxy}" >&2
-    echo "       $0 --matrix" >&2
+    echo "usage: $0 {rustpbx|asterisk} {udp|tcp|tls} {direct|proxy}" >&2
+    echo "       $0 {udp|tcp|tls} {direct|proxy}  # RustPBX compatibility form" >&2
+    echo "       $0 --matrix [rustpbx|asterisk|all]" >&2
     exit 64
 }
 
@@ -69,6 +70,31 @@ wait_for_file() {
     return 1
 }
 
+wait_for_health() {
+    service=$1
+    deadline=$(( $(now_epoch) + PHASE_TIMEOUT_SECONDS ))
+    container_id=$(compose ps -q "$service")
+    [ -n "$container_id" ] || {
+        echo "Compose did not create service $service" >&2
+        return 1
+    }
+    while [ "$(now_epoch)" -lt "$deadline" ]; do
+        health_state=$($DOCKER_BIN inspect -f '{{.State.Health.Status}}' "$container_id" 2>/dev/null || true)
+        case "$health_state" in
+            healthy) return 0 ;;
+            unhealthy)
+                echo "$service became unhealthy" >&2
+                compose logs --no-color "$service" >&2 || true
+                return 1
+                ;;
+        esac
+        sleep 1
+    done
+    echo "timed out waiting for $service health check" >&2
+    compose logs --no-color "$service" >&2 || true
+    return 1
+}
+
 run_phase() {
     service=$1
     phase=$2
@@ -90,7 +116,7 @@ run_phase() {
 }
 
 collect_logs() {
-    for service in netns rustpbx capture caller callee; do
+    for service in netns rustpbx asterisk capture caller callee; do
         compose logs --no-color "$service" >"$CASE_DIR/$service.compose.log" 2>&1 || true
     done
 }
@@ -111,8 +137,10 @@ cleanup() {
 }
 
 run_case() {
-    transport=$1
-    media=$2
+    pbx=$1
+    transport=$2
+    media=$3
+    case "$pbx" in rustpbx|asterisk) ;; *) usage ;; esac
     case "$transport" in udp|tcp|tls) ;; *) usage ;; esac
     case "$media" in direct|proxy) ;; *) usage ;; esac
 
@@ -125,7 +153,7 @@ run_case() {
         *) sip_port=5060 ;;
     esac
 
-    CASE_NAME="$transport-$media"
+    CASE_NAME="$pbx-$transport-$media"
     CASE_DIR="$ARTIFACT_ROOT/$E2E_RUN_ID/$CASE_NAME"
     # CASE_NAME is validated above, so this is a narrowly scoped reset of a
     # deterministic test artifact directory.
@@ -144,12 +172,15 @@ run_case() {
     export E2E_SIP_PORT="$sip_port"
     export E2E_ARTIFACT_DIR="$CASE_DIR"
     export CAPTURE_FILE=capture.pcap
+    export E2E_PBX="$pbx"
     export COMPOSE_PROJECT_NAME="rustpbx-e2e-$CASE_NAME-$E2E_RUN_ID"
 
     trap cleanup EXIT INT TERM HUP
 
-    compose up -d --build netns rustpbx capture caller callee
+    compose up -d --build netns capture "$pbx"
     wait_for_log capture E2E_CAPTURE_READY
+    wait_for_health "$pbx"
+    compose up -d --build caller callee
 
     # TCP/TLS phones keep the registered flow open.  SIPp's lifecycle scenario
     # receives the call as an out-of-call dialog on that same connection and
@@ -189,21 +220,34 @@ run_case() {
         -v "$SCRIPT_DIR:/suite:ro" \
         --entrypoint /bin/sh \
         "${E2E_TSHARK_IMAGE:-cincan/tshark@sha256:9cf3985977320cde1b19e9cbb3130c03c5668ff7b561ec97bfff28c850383104}" \
-        /suite/scripts/validate_pcap.sh /artifacts "$transport" "$media"
+        /suite/scripts/validate_pcap.sh /artifacts "$pbx" "$transport" "$media"
     trap - EXIT INT TERM HUP
     compose down -v --remove-orphans >/dev/null 2>&1 || true
     echo "PASS: $CASE_NAME ($CASE_DIR)"
 }
 
-if [ "${1:-}" = "--matrix" ] && [ "$#" -eq 1 ]; then
-    for transport in udp tcp tls; do
-        for media in direct proxy; do
-            # Each invocation owns its own compose project and cleanup trap.
-            "$0" "$transport" "$media"
+if [ "${1:-}" = "--matrix" ] && { [ "$#" -eq 1 ] || [ "$#" -eq 2 ]; }; then
+    matrix_target=${2:-rustpbx}
+    case "$matrix_target" in
+        rustpbx|asterisk) matrix_pbxes=$matrix_target ;;
+        all) matrix_pbxes="rustpbx asterisk" ;;
+        *) usage ;;
+    esac
+    for pbx in $matrix_pbxes; do
+        for transport in udp tcp tls; do
+            for media in direct proxy; do
+                # Each invocation owns its own compose project and cleanup trap.
+                "$0" "$pbx" "$transport" "$media"
+            done
         done
     done
     exit 0
 fi
 
-[ "$#" -eq 2 ] || usage
-run_case "$1" "$2"
+if [ "$#" -eq 2 ]; then
+    run_case rustpbx "$1" "$2"
+elif [ "$#" -eq 3 ]; then
+    run_case "$1" "$2" "$3"
+else
+    usage
+fi

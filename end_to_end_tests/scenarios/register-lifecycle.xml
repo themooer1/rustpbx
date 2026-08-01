@@ -5,10 +5,10 @@
   incoming INVITE as an out-of-call dialog.  The fixed pause is deliberately
   longer than the canned call and ends with an authenticated Expires: 0.
 -->
-<scenario name="rustpbx e2e persistent registration lifecycle">
+<scenario name="PBX e2e persistent registration lifecycle">
   <send><![CDATA[
 REGISTER sip:[remote_host]:[remote_port] SIP/2.0
-Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]-[local_port]
 From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-lifecycle-[call_number]
 To: <sip:[e2e_user]@[remote_host]:[remote_port]>
 Call-ID: [call_id]
@@ -22,7 +22,7 @@ Content-Length: 0
   <recv response="401" auth="true"/>
   <send><![CDATA[
 REGISTER sip:[remote_host]:[remote_port] SIP/2.0
-Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]-[local_port]
 From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-lifecycle-[call_number]
 To: <sip:[e2e_user]@[remote_host]:[remote_port]>
 Call-ID: [call_id]
@@ -43,7 +43,7 @@ Content-Length: 0
   <pause milliseconds="6000"/>
   <send><![CDATA[
 REGISTER sip:[remote_host]:[remote_port] SIP/2.0
-Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]-[local_port]
 From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-lifecycle-[call_number]
 To: <sip:[e2e_user]@[remote_host]:[remote_port]>
 Call-ID: [call_id]
@@ -57,7 +57,7 @@ Content-Length: 0
   <recv response="401" auth="true"/>
   <send><![CDATA[
 REGISTER sip:[remote_host]:[remote_port] SIP/2.0
-Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]-[local_port]
 From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-lifecycle-[call_number]
 To: <sip:[e2e_user]@[remote_host]:[remote_port]>
 Call-ID: [call_id]
