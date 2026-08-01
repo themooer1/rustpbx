@@ -4,7 +4,8 @@ This suite runs two authenticated SIPp endpoints and RustPBX inside one Docker
 Desktop Linux network namespace.  A tcpdump sidecar starts before either client
 registers and stops only after both clients explicitly unregister.  It leaves a
 pcap, SIPp logs, TLS key logs, Compose logs, and packet-validation report in a
-deterministic per-case directory.
+per-run, per-case directory. Independent invocations use separate Compose
+projects and Linux network namespaces, even when they run the same case.
 
 The private keys under `certs/` and `sipp/` are fixed test fixtures. They are
 intentionally reusable for packet decryption and must never be used outside
@@ -31,6 +32,7 @@ make matrix
 ```
 
 Equivalent direct invocation is `./run.sh tls proxy`.  The runner accepts
+`E2E_RUN_ID` (a lowercase Compose-safe identifier, generated automatically),
 `E2E_PHASE_TIMEOUT_SECONDS` (default 45), `E2E_SHUTDOWN_BUDGET_SECONDS`
 (default 4), `E2E_RTP_GRACE_SECONDS` (default 2), and
 `E2E_CAPTURE_DRAIN_SECONDS` (default 1) when diagnostics need more or less
@@ -39,8 +41,11 @@ and cached, low-memory Cargo settings suitable for Docker Desktop's 4 GiB VM.
 
 ## Artifacts and acceptance checks
 
-For `udp direct`, artifacts are at `artifacts/udp-direct/`; every other case
-uses the same `<transport>-<media>` convention.  The important files are:
+For run `ci-1`, the `udp direct` artifacts are at
+`artifacts/ci-1/udp-direct/`; every other case uses the same
+`<run-id>/<transport>-<media>` convention. Supplying the same `E2E_RUN_ID` to
+separate processes intentionally selects the same Compose project and is not
+safe for concurrent use. The important files are:
 
 - `capture.pcap` — the complete trace from pre-registration through
   unregistration.

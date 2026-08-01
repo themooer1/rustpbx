@@ -12,6 +12,24 @@ COMPOSE_PLUGIN=${DOCKER_COMPOSE_PLUGIN:-compose}
 DOCKER_BIN=${DOCKER_BIN:-docker}
 PHASE_TIMEOUT_SECONDS=${E2E_PHASE_TIMEOUT_SECONDS:-45}
 
+# A matrix inherits one generated ID, while an independently started runner
+# gets a different Compose project and artifact tree.  Restrict explicit IDs
+# to Compose's portable project-name character set.
+if [ -z "${E2E_RUN_ID:-}" ]; then
+    E2E_RUN_ID="$(date -u +%Y%m%d-%H%M%S)-$$"
+    export E2E_RUN_ID
+fi
+case "$E2E_RUN_ID" in
+    ''|[_.-]*|*[!a-z0-9_.-]*)
+        echo "E2E_RUN_ID must start with a lowercase letter or digit and contain only lowercase letters, digits, '.', '_' or '-'" >&2
+        exit 64
+        ;;
+esac
+[ "${#E2E_RUN_ID}" -le 32 ] || {
+    echo "E2E_RUN_ID must be at most 32 characters" >&2
+    exit 64
+}
+
 usage() {
     echo "usage: $0 {udp|tcp|tls} {direct|proxy}" >&2
     echo "       $0 --matrix" >&2
@@ -108,7 +126,7 @@ run_case() {
     esac
 
     CASE_NAME="$transport-$media"
-    CASE_DIR="$ARTIFACT_ROOT/$CASE_NAME"
+    CASE_DIR="$ARTIFACT_ROOT/$E2E_RUN_ID/$CASE_NAME"
     # CASE_NAME is validated above, so this is a narrowly scoped reset of a
     # deterministic test artifact directory.
     rm -rf "$CASE_DIR"
@@ -126,7 +144,7 @@ run_case() {
     export E2E_SIP_PORT="$sip_port"
     export E2E_ARTIFACT_DIR="$CASE_DIR"
     export CAPTURE_FILE=capture.pcap
-    export COMPOSE_PROJECT_NAME="rustpbx-e2e-$CASE_NAME"
+    export COMPOSE_PROJECT_NAME="rustpbx-e2e-$CASE_NAME-$E2E_RUN_ID"
 
     trap cleanup EXIT INT TERM HUP
 
