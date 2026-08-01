@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<!-- Explicit terminal unregister; a successful suite must capture this. -->
+<scenario name="rustpbx e2e authenticated unregister">
+  <send retrans="500"><![CDATA[
+REGISTER sip:[remote_host]:[remote_port] SIP/2.0
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-unregister-[call_number]
+To: <sip:[e2e_user]@[remote_host]:[remote_port]>
+Call-ID: [call_id]
+CSeq: 1 REGISTER
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Expires: 0
+Max-Forwards: 70
+Content-Length: 0
+
+]]></send>
+  <recv response="401" auth="true"/>
+  <send retrans="500"><![CDATA[
+REGISTER sip:[remote_host]:[remote_port] SIP/2.0
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-unregister-[call_number]
+To: <sip:[e2e_user]@[remote_host]:[remote_port]>
+Call-ID: [call_id]
+CSeq: 2 REGISTER
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Expires: 0
+[authentication]
+Max-Forwards: 70
+Content-Length: 0
+
+]]></send>
+  <recv response="200" crlf="true"/>
+  <timewait milliseconds="100"/>
+</scenario>

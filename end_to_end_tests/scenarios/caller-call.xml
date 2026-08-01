@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<!--
+  `play_pcap_audio` is SIPp's SDP-aware media primitive.  After the 200 it
+  takes both c= address and m=audio port from the received SDP; no destination
+  address or port is embedded in this scenario or in the PCAP fixture.
+-->
+<scenario name="rustpbx e2e caller with negotiated RTP and RFC2833">
+  <send retrans="500"><![CDATA[
+INVITE sip:[e2e_target]@[remote_host]:[remote_port];transport=[transport] SIP/2.0
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
+To: <sip:[e2e_target]@[remote_host]:[remote_port]>
+Call-ID: [call_id]
+CSeq: 1 INVITE
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Max-Forwards: 70
+Content-Type: application/sdp
+Content-Length: [len]
+
+v=0
+o=[e2e_user] 1 1 IN IP[media_ip_type] [media_ip]
+s=rustpbx-e2e
+c=IN IP[media_ip_type] [media_ip]
+t=0 0
+m=audio [media_port] RTP/AVP 8 101
+a=rtpmap:8 PCMA/8000
+a=rtpmap:101 telephone-event/8000
+a=fmtp:101 0-16
+]]></send>
+  <recv response="407" auth="true" crlf="true"/>
+  <send><![CDATA[
+ACK sip:[e2e_target]@[remote_host]:[remote_port];transport=[transport] SIP/2.0
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
+To: [last_To:]
+Call-ID: [call_id]
+CSeq: 1 ACK
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Max-Forwards: 70
+Content-Length: 0
+
+]]></send>
+  <send retrans="500"><![CDATA[
+INVITE sip:[e2e_target]@[remote_host]:[remote_port];transport=[transport] SIP/2.0
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
+To: <sip:[e2e_target]@[remote_host]:[remote_port]>
+Call-ID: [call_id]
+CSeq: 2 INVITE
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Max-Forwards: 70
+[authentication]
+Content-Type: application/sdp
+Content-Length: [len]
+
+v=0
+o=[e2e_user] 1 1 IN IP[media_ip_type] [media_ip]
+s=rustpbx-e2e
+c=IN IP[media_ip_type] [media_ip]
+t=0 0
+m=audio [media_port] RTP/AVP 8 101
+a=rtpmap:8 PCMA/8000
+a=rtpmap:101 telephone-event/8000
+a=fmtp:101 0-16
+]]></send>
+  <recv response="100" optional="true"/>
+  <recv response="180" optional="true"/>
+  <recv response="200" rrs="true" crlf="true"/>
+  <send><![CDATA[
+ACK [next_url] SIP/2.0
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
+To: [last_To:]
+[routes]
+Call-ID: [call_id]
+CSeq: 2 ACK
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Max-Forwards: 70
+Content-Length: 0
+
+]]></send>
+  <nop><action><exec play_pcap_audio="/opt/sipp/pcap/g711a.pcap"/></action></nop>
+  <!-- Two seconds provides enough packets for content and direction checks. -->
+  <pause milliseconds="2000"/>
+  <nop><action><exec play_pcap_audio="/opt/sipp/pcap/dtmf_2833_1.pcap"/></action></nop>
+  <pause milliseconds="500"/>
+  <send retrans="500"><![CDATA[
+BYE [next_url] SIP/2.0
+Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+From: <sip:[e2e_user]@[remote_host]:[remote_port]>;tag=[pid]-caller-[call_number]
+To: [last_To:]
+[routes]
+Call-ID: [call_id]
+CSeq: 3 BYE
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Max-Forwards: 70
+Content-Length: 0
+
+]]></send>
+  <recv response="200" crlf="true"/>
+  <!-- Deliberately short: a successful BYE must not wait for RTP inactivity. -->
+  <timewait milliseconds="200"/>
+</scenario>

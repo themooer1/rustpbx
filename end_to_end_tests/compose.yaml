@@ -1,0 +1,144 @@
+# A single, intentionally shared Linux network namespace makes `tcpdump -i any`
+# deterministic on Docker Desktop as well as native Linux. In
+# particular, it sees direct caller<->callee RTP, which a sidecar on an
+# ordinary Docker bridge is not guaranteed to receive.
+#
+# All addresses below are loopback.  The SIPp scenarios must bind distinct
+# signalling/media ports and send their SDP-derived media to 127.0.0.1; they
+# must not use fixed *destination* RTP ports.
+services:
+  # Owns the namespace and stays up after tcpdump is stopped, so artifacts can
+  # be flushed and inspected without also stopping the PBX or either endpoint.
+  netns:
+    image: alpine:3.20
+    platform: ${E2E_PLATFORM:-linux/amd64}
+    command: ["sleep", "infinity"]
+
+  capture:
+    platform: ${E2E_PLATFORM:-linux/amd64}
+    build:
+      context: ./capture
+    network_mode: service:netns
+    depends_on:
+      netns:
+        condition: service_started
+    cap_add: [NET_ADMIN, NET_RAW]
+    environment:
+      CAPTURE_FILE: ${CAPTURE_FILE:-call.pcap}
+      E2E_CASE: ${E2E_CASE:-manual}
+    volumes:
+      - ${E2E_ARTIFACT_DIR:-./artifacts}:/artifacts
+    command:
+      - -ec
+      - |
+        mkdir -p /artifacts
+        tcpdump -i any -nn -s 0 -U -w "/artifacts/$${CAPTURE_FILE}" \
+          '(port 5060 or port 5061 or udp portrange 30000-30019 or udp portrange 40000-40199)' &
+        tcpdump_pid="$$!"
+        sleep 0.1
+        kill -0 "$$tcpdump_pid"
+        : > /artifacts/capture.ready
+        echo "E2E_CAPTURE_READY case=$${E2E_CASE} file=/artifacts/$${CAPTURE_FILE}"
+        trap 'kill -INT "$$tcpdump_pid" 2>/dev/null || true; wait "$$tcpdump_pid" || true; exit 0' INT TERM
+        wait "$$tcpdump_pid"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /artifacts/capture.ready"]
+      interval: 1s
+      timeout: 1s
+      retries: 10
+
+  rustpbx:
+    platform: ${E2E_PLATFORM:-linux/amd64}
+    build:
+      context: ..
+      dockerfile: end_to_end_tests/rustpbx/Dockerfile
+    network_mode: service:netns
+    depends_on:
+      capture:
+        condition: service_healthy
+    environment:
+      MEDIA_PROXY_MODE: ${MEDIA_PROXY_MODE:-all}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - ./certs:/etc/rustpbx/certs:ro
+      - pbx-state:/state
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5060 && nc -z 127.0.0.1 5061"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+      start_period: 2s
+
+  # These persist solely as execution targets.  The runner starts the callee
+  # registration first, then the caller scenario, and always sends both an
+  # unregister before it tears the project down.
+  caller:
+    platform: ${E2E_PLATFORM:-linux/amd64}
+    build:
+      context: .
+      dockerfile: sipp/Dockerfile
+    network_mode: service:netns
+    cap_add: [NET_RAW]
+    depends_on:
+      rustpbx:
+        condition: service_healthy
+    environment:
+      SIPP_ROLE: caller
+      SIPP_USER: "1001"
+      SIPP_PASSWORD: e2e-password
+      SIPP_TARGET: "1002"
+      SIPP_LOCAL_IP: 127.0.0.1
+      SIPP_MEDIA_IP: 127.0.0.1
+      SIPP_TARGET_HOST: 127.0.0.1
+      SIPP_TARGET_PORT: ${SIP_TARGET_PORT:-5060}
+      SIPP_REMOTE_HOST: 127.0.0.1
+      SIPP_REMOTE_PORT: ${SIP_TARGET_PORT:-5060}
+      SIPP_TRANSPORT: ${SIP_TRANSPORT:-udp}
+      SIPP_ARTIFACT_DIR: /artifacts
+      SIPP_LOG_PREFIX: caller
+      SIP_TARGET_HOST: 127.0.0.1
+      SIP_TARGET_PORT: ${SIP_TARGET_PORT:-5060}
+      SIP_TRANSPORT: ${SIP_TRANSPORT:-udp}
+      SSLKEYLOGFILE: /artifacts/caller.keylog
+    volumes:
+      - ${E2E_ARTIFACT_DIR:-./artifacts}:/artifacts
+      - ./certs:/certs:ro
+      - ./scenarios:/scenarios:ro
+    command: ["sleep", "infinity"]
+
+  callee:
+    platform: ${E2E_PLATFORM:-linux/amd64}
+    build:
+      context: .
+      dockerfile: sipp/Dockerfile
+    network_mode: service:netns
+    cap_add: [NET_RAW]
+    depends_on:
+      rustpbx:
+        condition: service_healthy
+    environment:
+      SIPP_ROLE: callee
+      SIPP_USER: "1002"
+      SIPP_PASSWORD: e2e-password
+      SIPP_TARGET: "1001"
+      SIPP_LOCAL_IP: 127.0.0.1
+      SIPP_MEDIA_IP: 127.0.0.1
+      SIPP_TARGET_HOST: 127.0.0.1
+      SIPP_TARGET_PORT: ${SIP_TARGET_PORT:-5060}
+      SIPP_REMOTE_HOST: 127.0.0.1
+      SIPP_REMOTE_PORT: ${SIP_TARGET_PORT:-5060}
+      SIPP_TRANSPORT: ${SIP_TRANSPORT:-udp}
+      SIPP_ARTIFACT_DIR: /artifacts
+      SIPP_LOG_PREFIX: callee
+      SIP_TARGET_HOST: 127.0.0.1
+      SIP_TARGET_PORT: ${SIP_TARGET_PORT:-5060}
+      SIP_TRANSPORT: ${SIP_TRANSPORT:-udp}
+      SSLKEYLOGFILE: /artifacts/callee.keylog
+    volumes:
+      - ${E2E_ARTIFACT_DIR:-./artifacts}:/artifacts
+      - ./certs:/certs:ro
+      - ./scenarios:/scenarios:ro
+    command: ["sleep", "infinity"]
+
+volumes:
+  pbx-state:

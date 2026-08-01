@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<!-- Sends PCMA toward the c= address and m=audio port from the received INVITE. -->
+<scenario name="rustpbx e2e callee with negotiated RTP">
+  <recv request="INVITE" rrs="true" crlf="true"/>
+  <send><![CDATA[
+SIP/2.0 100 Trying
+[last_Via:]
+[last_From:]
+[last_To:]
+[last_Call-ID:]
+[last_CSeq:]
+Content-Length: 0
+
+]]></send>
+  <send><![CDATA[
+SIP/2.0 180 Ringing
+[last_Via:]
+[last_From:]
+[last_To:];tag=[pid]-callee-[call_number]
+[last_Call-ID:]
+[last_CSeq:]
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Content-Length: 0
+
+]]></send>
+  <send retrans="500"><![CDATA[
+SIP/2.0 200 OK
+[last_Via:]
+[last_From:]
+[last_To:];tag=[pid]-callee-[call_number]
+[last_Call-ID:]
+[last_CSeq:]
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Content-Type: application/sdp
+Content-Length: [len]
+
+v=0
+o=[e2e_user] 1 1 IN IP[media_ip_type] [media_ip]
+s=rustpbx-e2e
+c=IN IP[media_ip_type] [media_ip]
+t=0 0
+m=audio [media_port] RTP/AVP 8 101
+a=rtpmap:8 PCMA/8000
+a=rtpmap:101 telephone-event/8000
+a=fmtp:101 0-16
+]]></send>
+  <recv request="ACK" crlf="true"/>
+  <nop><action><exec play_pcap_audio="/opt/sipp/pcap/g711a.pcap"/></action></nop>
+  <recv request="BYE" crlf="true"/>
+  <send><![CDATA[
+SIP/2.0 200 OK
+[last_Via:]
+[last_From:]
+[last_To:]
+[last_Call-ID:]
+[last_CSeq:]
+Contact: <sip:[e2e_user]@[local_ip]:[local_port];transport=[transport]>
+Content-Length: 0
+
+]]></send>
+  <!-- End immediately after transaction cleanup, never on an RTP timeout. -->
+  <timewait milliseconds="200"/>
+</scenario>

@@ -1,0 +1,17 @@
+[req]
+distinguished_name = subject
+prompt = no
+
+[subject]
+CN = rustpbx-e2e-ca
+
+[server]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @subject_alt_names
+
+[subject_alt_names]
+DNS.1 = localhost
+DNS.2 = rustpbx
+IP.1 = 127.0.0.1

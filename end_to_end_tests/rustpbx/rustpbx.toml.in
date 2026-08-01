@@ -1,0 +1,31 @@
+# Deterministic PBX configuration used only by end_to_end_tests.
+# All containers share a network namespace, so 127.0.0.1 is also the correct
+# advertised SDP address for both direct and proxied media cases.
+http_addr = "127.0.0.1:8080"
+log_level = "info"
+database_url = "sqlite:///state/rustpbx.sqlite3"
+external_ip = "127.0.0.1"
+rtp_start_port = 30000
+rtp_end_port = 30019
+
+[proxy]
+modules = ["acl", "auth", "registrar", "call"]
+addr = "0.0.0.0"
+udp_port = 5060
+tcp_port = 5060
+tls_port = 5061
+ssl_certificate = "/etc/rustpbx/certs/server.crt"
+ssl_private_key = "/etc/rustpbx/certs/server.key"
+registrar_expires = 60
+ensure_user = true
+media_proxy = "__MEDIA_PROXY_MODE__"
+audio_codecs = ["pcma"]
+rtp_timeout = 5
+acl_rules = ["allow all", "deny all"]
+
+[[proxy.user_backends]]
+type = "memory"
+users = [
+  { username = "1001", password = "e2e-password" },
+  { username = "1002", password = "e2e-password" },
+]
